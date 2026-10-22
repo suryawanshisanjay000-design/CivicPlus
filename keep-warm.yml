@@ -1,0 +1,25 @@
+name: Keep API Warm
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    name: Ping Render /health
+    runs-on: ubuntu-latest
+    steps:
+      - name: Request health endpoint
+        run: |
+          for i in 1 2 3; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 90 \
+              https://civicpulse-api-qd7i.onrender.com/health || true)
+            echo "attempt $i -> HTTP $code"
+            if [ "$code" = "200" ]; then
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "API did not respond"
+          exit 1
