@@ -1,0 +1,119 @@
+CIVICPULSE — OPENCODE MASTER EXECUTION PROMPT
+
+You are the primary engineer responsible for building the CivicPulse MVP.
+
+Read the attached/master plan before writing code.
+
+MISSION
+-------
+Create a working demo-ready CivicPulse application.
+
+The most important workflow is:
+
+Anonymous Citizen
+    -> submit complaint + optional photo + location
+    -> ticket created
+    -> AI/fallback triage
+    -> department + priority + SLA
+    -> duplicate check
+    -> municipal officer dashboard
+    -> assign
+    -> in progress
+    -> mandatory closing note + after photo
+    -> resolved
+    -> citizen tracks the result publicly
+
+TECHNICAL DIRECTION
+-------------------
+- Use the existing repository architecture if it is already usable.
+- Prefer Next.js + TypeScript + Supabase.
+- Use Supabase PostgreSQL and Supabase Storage.
+- Use Supabase Auth for officials.
+- Use Groq server-side.
+- Do not introduce FastAPI if Next.js server routes are sufficient.
+- Do not use MySQL and PostgreSQL together.
+- Do not overengineer.
+
+FIRST ACTION — INSPECTION
+-------------------------
+Before coding, inspect:
+- repository tree
+- package.json
+- current framework
+- environment files
+- Supabase configuration
+- existing database migrations
+- API routes
+- authentication
+- deployment files
+- Git configuration
+
+Then create/update DEVELOPMENT_STATUS.md with:
+- current architecture
+- what already works
+- what is broken
+- implementation order
+
+IMPLEMENTATION ORDER
+--------------------
+1. Database + seed
+2. Supabase clients
+3. Citizen home
+4. Citizen report
+5. Storage upload
+6. Ticket + PIN
+7. Tracking
+8. AI/fallback triage
+9. SLA
+10. Official auth
+11. Dashboard
+12. Ticket detail
+13. Resolution proof
+14. Duplicate detection
+15. Timeline
+16. UI polish
+17. optional PDF/QR/map
+18. full test
+19. production build
+
+NON-NEGOTIABLE
+--------------
+- Citizen submission must work without login.
+- Official pages require authentication.
+- Secrets must never reach the browser.
+- Groq failure must not break ticket creation.
+- Every status change must be auditable.
+- Resolution requires after photo + >=20 character closing note.
+- Public tracking must not expose internal officer data.
+- Duplicate complaints must not delete the citizen's submission.
+- Server/database timestamps are authoritative for SLA.
+- Use real Supabase persistence, not fake frontend state.
+
+DO NOT
+------
+- build unnecessary microservices
+- add Kubernetes/Redis/Kafka
+- create multiple databases
+- spend hours on animations
+- spend hours on optional maps/PDFs before the core flow works
+- claim something works without testing it
+
+DEFINITION OF DONE
+------------------
+A user can:
+1. report anonymously,
+2. receive ticket + PIN,
+3. see the ticket in Supabase,
+4. see it in the officer dashboard,
+5. assign it,
+6. mark it in progress,
+7. resolve it with proof,
+8. see the resolved status on the public tracking page.
+
+After implementation:
+- run lint
+- run typecheck
+- run tests
+- run production build
+- test the complete citizen -> officer -> citizen flow
+- document any remaining issue precisely.

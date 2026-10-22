@@ -1,0 +1,137 @@
+CIVICPULSE — FINAL TEST CHECKLIST
+=================================
+
+A. LOCAL START
+--------------
+[ ] npm install works
+[ ] development server starts
+[ ] no fatal console errors
+[ ] environment variables loaded
+
+B. SUPABASE
+-----------
+[ ] database reachable
+[ ] migrations applied
+[ ] seed data exists
+[ ] storage bucket exists
+[ ] image upload works
+[ ] RLS enabled
+[ ] anonymous access does not expose all tickets
+
+C. CITIZEN
+----------
+[ ] home page loads
+[ ] report page loads
+[ ] description required
+[ ] category works
+[ ] location works
+[ ] photo upload works
+[ ] ticket is created
+[ ] ticket number returned
+[ ] PIN returned once
+[ ] tracking page works
+
+D. AI
+-----
+[ ] Groq key works
+[ ] valid JSON returned
+[ ] invalid AI response handled
+[ ] Groq failure handled
+[ ] fallback classification works
+[ ] department saved
+[ ] priority saved
+[ ] SLA saved
+
+E. DUPLICATES
+-------------
+[ ] nearby active ticket detected
+[ ] duplicate relationship recorded
+[ ] impact count increments
+[ ] original citizen submission preserved
+
+F. OFFICIAL AUTH
+----------------
+[ ] unauthenticated admin access blocked
+[ ] field officer can log in
+[ ] supervisor can log in
+[ ] commissioner can log in
+[ ] role restrictions work
+
+G. DASHBOARD
+------------
+[ ] ticket appears
+[ ] filters work
+[ ] SLA countdown works
+[ ] breached ticket visible
+[ ] ticket detail opens
+[ ] assignment works
+[ ] status transition works
+[ ] timeline updates
+
+H. RESOLUTION
+-------------
+[ ] cannot resolve without after photo
+[ ] cannot resolve with <20-char note
+[ ] valid resolution succeeds
+[ ] after photo saved
+[ ] closing note saved
+[ ] resolved_at saved
+[ ] audit event created
+
+I. PUBLIC TRACKING
+------------------
+[ ] ticket + PIN required
+[ ] safe data only
+[ ] timeline visible
+[ ] before photo visible
+[ ] after photo visible after resolution
+[ ] closing note visible
+[ ] internal data hidden
+
+J. SECURITY
+-----------
+[ ] service role key never in client code
+[ ] Groq key never in client code
+[ ] no plaintext PIN stored
+[ ] RLS policies reviewed
+[ ] admin routes protected
+[ ] public endpoint does not leak all tickets
+
+K. RESPONSIVE
+-------------
+[ ] desktop citizen
+[ ] mobile citizen
+[ ] desktop officer
+[ ] tablet officer
+[ ] upload works on mobile
+[ ] location permission handled
+
+L. PRODUCTION
+-------------
+[ ] production build succeeds
+[ ] deployment succeeds
+[ ] production environment variables configured
+[ ] Supabase production works
+[ ] auth works
+[ ] storage works
+[ ] ticket creation works
+[ ] official dashboard works
+[ ] resolution works
+[ ] public tracking works
+
+FINAL DEMO
+----------
+1. Open citizen portal.
+2. Submit a pothole complaint with photo/location.
+3. Show ticket + PIN.
+4. Open officer dashboard.
+5. Show AI category/priority/SLA.
+6. Assign ticket.
+7. Mark IN_PROGRESS.
+8. Upload after photo + closing note.
+9. Resolve.
+10. Open public tracking page.
+11. Show complete timeline and before/after evidence.
+
+If these 11 steps work without manual database editing,
+CivicPulse MVP is ready for demonstration.

@@ -1,0 +1,35 @@
+.vercel
+
+# Local secrets
+tokensmain.txt
+OPENCODETOKEN*.txt
+githubtoken.txt
+*.pat
+.env
+.env.local
+backend/.env
+*.db
+
+# Dependencies
+node_modules/
+backend/.venv311/
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Temp token/key files (never commit)
+anon_env.json
+anon_payload
+svc_payload
+legacy_anon.txt
+legacy_service.txt
+raw_keys.txt
+render_deploy_id.txt
+sb_jwt.json
+sb_keys.json
+netlify_token.txt
+
+# Build
+dist/
+svc_env.json

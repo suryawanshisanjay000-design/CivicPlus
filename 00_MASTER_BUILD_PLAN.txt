@@ -1,0 +1,1136 @@
+CIVICPULSE — SINGLE BUILD PLAN FOR OPENCODE
+============================================
+
+PURPOSE
+-------
+Build a simple, working, demo-ready version of CivicPulse using OpenCode.
+
+The original CivicPulse documents describe a production-grade municipal grievance
+platform with:
+- anonymous citizen reporting
+- AI triage
+- duplicate detection
+- municipal officer dashboard
+- SLA countdown/escalation
+- before/after proof
+- public tracking
+- QR/PDF documents
+- analytics
+
+This plan deliberately reduces that large specification into a small, reliable MVP.
+DO NOT try to implement every production-grade feature from the original documents.
+The priority is:
+
+1. Working end-to-end flow
+2. Clean UI
+3. Real database persistence
+4. Real authentication for officials
+5. Real Supabase storage
+6. Real Groq triage if API key exists
+7. Simple duplicate detection
+8. SLA logic
+9. Deployment-ready project
+10. Easy live demonstration
+
+SOURCE DECISIONS
+----------------
+The source documents propose a dual-portal system: anonymous Citizen Portal and
+secure Municipal Official Portal. They also propose Groq AI triage, relational
+database state management, duplicate clustering, SLA monitoring, closure proof,
+and public tracking. These are the core concepts retained here.
+
+The original architecture documents contain two database variants:
+- PostgreSQL/PostGIS + Supabase
+- MySQL 8.0 + Railway
+
+For THIS SIMPLE IMPLEMENTATION, use ONE database architecture only:
+SUPABASE POSTGRESQL.
+
+Do not build both MySQL and PostgreSQL.
+Do not add PostGIS unless it is already straightforward in the chosen Supabase setup.
+Use normal latitude/longitude numeric fields and a simple Haversine-distance
+calculation in application code for the MVP.
+
+RECOMMENDED STACK
+-----------------
+Frontend:
+- Next.js
+- TypeScript
+- Tailwind CSS
+- Responsive UI
+
+Backend:
+- Next.js server-side/API routes OR a small FastAPI backend only if the existing
+  project already has one.
+- Prefer the simplest architecture already present in the repository.
+- Do not create a second backend just because the original PRD mentioned FastAPI.
+
+Database:
+- Supabase PostgreSQL
+
+Storage:
+- Supabase Storage
+
+Authentication:
+- Supabase Auth for municipal officials
+- Citizens do NOT need accounts
+
+AI:
+- Groq API
+- AI is an enhancement, not a hard dependency
+- If GROQ_API_KEY is missing, use a deterministic fallback triage function
+
+Deployment:
+- Frontend can be deployed to Vercel
+- If the existing project already uses Railway for backend, keep Railway
+- GitHub should contain the complete source code
+
+MAP:
+- Leaflet + OpenStreetMap if needed
+- No paid map API required
+
+PDF/QR:
+- Keep simple
+- Generate citizen receipt and optional work order only if reliable
+- Do not let PDF generation block ticket submission
+
+============================================================
+1. MVP PRODUCT SCOPE
+============================================================
+
+PORTAL A — CITIZEN
+------------------
+Routes:
+
+/
+    Landing page
+
+/report
+    Anonymous grievance submission
+
+/track
+    Ticket lookup
+
+/track/[ticket]
+    Public ticket status page
+
+/map
+    Public issue map (optional if time permits)
+
+Citizen flow:
+1. Open home page
+2. Click "Report an Issue"
+3. Enter description
+4. Select category if desired
+5. Upload before photo
+6. Enter/use location
+7. System performs duplicate check
+8. AI/fallback triages complaint
+9. Ticket is created
+10. Citizen receives ticket number + secret PIN
+11. Citizen sees tracking page
+12. Citizen can return later using ticket + PIN
+
+NO citizen:
+- registration
+- phone number
+- email
+- password
+
+PORTAL B — MUNICIPAL
+--------------------
+Routes:
+
+/admin/login
+/admin/dashboard
+/admin/tickets/[id]
+
+Roles:
+- FIELD_OFFICER
+- SUPERVISOR
+- COMMISSIONER
+
+For MVP, permissions can be simplified:
+
+FIELD_OFFICER:
+- see assigned/open tickets
+- view ticket
+- mark in progress
+- resolve with after photo + closing note
+
+SUPERVISOR:
+- see all tickets
+- assign/reassign
+- resolve
+- view SLA breaches
+
+COMMISSIONER:
+- view all tickets
+- analytics
+- read-only overview
+
+============================================================
+2. CORE TICKET STATE MACHINE
+============================================================
+
+Use exactly these statuses:
+
+SUBMITTED
+    |
+    v
+ASSIGNED
+    |
+    v
+IN_PROGRESS
+    |
+    v
+RESOLUTION_SUBMITTED
+    |
+    v
+RESOLVED
+
+Additional:
+BREACHED
+REOPENED
+
+Rules:
+- New ticket starts as SUBMITTED or ASSIGNED after triage.
+- Officer assignment changes it to ASSIGNED.
+- Starting work -> IN_PROGRESS.
+- Closing requires:
+  1. minimum 20-character closing note
+  2. after photo
+- Successful closure -> RESOLVED.
+- If SLA deadline passes before resolution -> mark BREACHED / record breach.
+- Citizen may reopen a resolved ticket during the MVP review window if implemented.
+
+Do NOT create a complicated event-sourcing architecture.
+Use one ticket table plus one timeline/audit table.
+
+============================================================
+3. DATABASE DESIGN
+============================================================
+
+Use Supabase PostgreSQL.
+
+TABLE: wards
+------------
+id UUID or bigint primary key
+ward_number integer unique
+ward_name text
+zone_name text
+created_at timestamptz
+
+TABLE: departments
+------------------
+id UUID or bigint primary key
+name text
+code text unique
+default_sla_hours integer
+created_at timestamptz
+
+Seed departments:
+- ROADS
+- WATER
+- SOLID_WASTE
+- ELECTRICAL
+- PUBLIC_HEALTH
+
+TABLE: profiles
+---------------
+id UUID primary key
+auth_user_id UUID unique
+full_name text
+email text
+role text
+department_id FK
+ward_id FK
+created_at timestamptz
+
+Use Supabase Auth user IDs.
+
+TABLE: tickets
+--------------
+id UUID primary key
+ticket_number text unique
+description text
+translated_description text nullable
+category text
+subcategory text nullable
+department_id FK
+ward_id FK
+priority text
+status text
+latitude numeric nullable
+longitude numeric nullable
+landmark text nullable
+before_photo_url text nullable
+after_photo_url text nullable
+assigned_officer_id FK nullable
+sla_hours integer
+sla_deadline timestamptz
+created_at timestamptz
+assigned_at timestamptz nullable
+started_at timestamptz nullable
+resolved_at timestamptz nullable
+closing_notes text nullable
+duplicate_of UUID nullable
+impact_count integer default 1
+reopen_until timestamptz nullable
+
+IMPORTANT:
+For anonymous tracking, store a hashed secret/PIN, NOT a plaintext secret.
+Example:
+tracking_pin_hash text
+
+TABLE: ticket_events
+--------------------
+id UUID primary key
+ticket_id FK
+event_type text
+old_status text nullable
+new_status text nullable
+actor_user_id UUID nullable
+notes text nullable
+created_at timestamptz
+
+TABLE: assignments (OPTIONAL)
+-----------------------------
+Only create this if assignment history is actually needed.
+Otherwise keep assigned_officer_id in tickets and log changes in ticket_events.
+
+============================================================
+4. DATABASE SECURITY
+============================================================
+
+Supabase RLS must be enabled.
+
+Citizen/public:
+- Must NOT be able to read all tickets.
+- Public tracking must expose only safe fields for a ticket verified by
+  ticket number + secret PIN, or use a server-side endpoint that performs
+  the verification.
+- Do not expose officer email, internal notes, auth IDs, or sensitive data.
+
+Officials:
+- authenticated users can access tickets according to role.
+- FIELD_OFFICER should only access permitted assigned/ward tickets.
+- SUPERVISOR/COMMISSIONER can access broader data.
+
+Never put:
+- SUPABASE_SERVICE_ROLE_KEY
+- GROQ_API_KEY
+- other secrets
+into frontend code.
+
+============================================================
+5. ANONYMOUS TICKET SECURITY
+============================================================
+
+When a citizen submits:
+
+1. Generate a human-friendly ticket:
+   CP-YYYY-XXXX
+
+2. Generate a random 6-digit PIN.
+
+3. Store only a secure hash of the PIN.
+
+4. Return:
+   - ticket_number
+   - PIN ONCE
+   - tracking URL
+
+5. Show:
+   "Save this PIN. It is required to access your ticket."
+
+Do not claim the system is perfectly anonymous.
+Say:
+"No name, phone number, or email is required."
+
+============================================================
+6. CITIZEN SUBMISSION FLOW
+============================================================
+
+SCREEN 1 — HOME
+---------------
+Hero:
+"Report Civic Issues. Track Resolution."
+
+Buttons:
+- Report an Issue
+- Track a Ticket
+
+Show simple counters:
+- Open Tickets
+- Resolved Tickets
+- Average Resolution Time
+
+Use real DB values if easy.
+Otherwise use clearly labelled demo data only during local demo.
+
+SCREEN 2 — REPORT
+-----------------
+Fields:
+- Description (required)
+- Category (optional)
+- Photo (optional but strongly encouraged)
+- Latitude
+- Longitude
+- Landmark
+- Use Current Location button
+
+Categories:
+- Pothole / Road
+- Water / Sewer
+- Garbage
+- Streetlight / Electrical
+- Public Health
+- Other
+
+Submission:
+- Validate fields
+- Upload image to Supabase Storage if present
+- Run triage
+- Run duplicate detection
+- Create ticket
+- Return ticket + PIN
+
+Do not create a multi-page wizard unless it materially improves reliability.
+A single clean form is enough.
+
+SCREEN 3 — SUCCESS
+------------------
+Display:
+- Ticket number
+- PIN
+- Department
+- Priority
+- SLA deadline
+- Track Ticket button
+- Copy tracking link
+
+============================================================
+7. AI TRIAGE
+============================================================
+
+Groq output must be strict JSON.
+
+Expected shape:
+
+{
+  "department": "ROADS",
+  "subcategory": "POTHOLE",
+  "priority": "HIGH",
+  "summary": "Large pothole creating accident risk",
+  "urgency_score": 8
+}
+
+Allowed departments:
+ROADS
+WATER
+SOLID_WASTE
+ELECTRICAL
+PUBLIC_HEALTH
+
+Allowed priority:
+LOW
+MEDIUM
+HIGH
+CRITICAL
+
+Rules:
+- Validate AI output against allowed enums.
+- If invalid, use fallback.
+- If Groq fails, ticket creation MUST STILL WORK.
+- Do not expose the Groq API key to the browser.
+- Do not make the entire application dependent on AI availability.
+
+Fallback logic example:
+- pothole/road/crater -> ROADS
+- water/leak/sewage/drain -> WATER
+- garbage/waste/dumping -> SOLID_WASTE
+- light/pole/wire/electric -> ELECTRICAL
+- health/disease/public hygiene -> PUBLIC_HEALTH
+- otherwise -> ROADS or OTHER default department
+
+============================================================
+8. DUPLICATE DETECTION
+============================================================
+
+MVP implementation:
+
+When a new ticket has latitude + longitude:
+
+1. Query active tickets in same department.
+2. Calculate distance from new point to existing ticket points.
+3. If distance <= 50 meters AND category/subcategory is similar:
+   - show/record duplicate relationship
+   - set duplicate_of to master ticket
+   - increment master impact_count
+   - do not create a second operational work order if practical
+
+If implementing duplicate detection during submission is too risky:
+- always create the citizen submission
+- link it to an existing ticket afterward
+
+IMPORTANT:
+Never delete a citizen report just because it is a duplicate.
+Preserve the submission for auditability.
+
+============================================================
+9. SLA ENGINE
+============================================================
+
+Every ticket receives:
+sla_hours
+sla_deadline
+
+Suggested seed values:
+- ELECTRICAL: 24 hours
+- ROADS: 48 hours
+- WATER: 24 hours
+- SOLID_WASTE: 24 hours
+- PUBLIC_HEALTH: 72 hours
+
+Priority may shorten SLA only if explicitly implemented.
+
+Dashboard:
+- Green: > 50% time remaining
+- Yellow: < 25%
+- Red: overdue
+
+Do not rely only on a frontend timer.
+The server/database timestamp is authoritative.
+
+For MVP, breach checking can happen:
+- when dashboard loads
+- when ticket is accessed
+- when ticket is updated
+- optionally through a scheduled backend job
+
+Do not build complex distributed workers unless necessary.
+
+============================================================
+10. OFFICIAL DASHBOARD
+============================================================
+
+LOGIN
+-----
+Use Supabase Auth.
+
+Dashboard layout:
+
+Top:
+- Open
+- In Progress
+- Breached
+- Resolved Today
+
+Filters:
+- Department
+- Ward
+- Priority
+- Status
+
+Columns:
+1. NEW / ASSIGNED
+2. IN PROGRESS
+3. RESOLUTION / BREACHED
+4. RESOLVED
+
+Ticket card:
+- ticket number
+- short description
+- department
+- priority
+- impact count
+- SLA remaining
+- assigned officer
+
+Click card -> ticket detail.
+
+============================================================
+11. TICKET DETAIL / OFFICER ACTIONS
+============================================================
+
+Display:
+- description
+- AI summary
+- category
+- priority
+- location
+- map link/map
+- before photo
+- timeline
+- SLA
+- assignment
+
+Actions:
+- Assign
+- Mark In Progress
+- Resolve
+
+Resolve modal:
+- closing notes >= 20 characters
+- after photo required
+- submit
+
+On successful resolution:
+- status = RESOLVED
+- resolved_at = now
+- after_photo_url saved
+- closing_notes saved
+- ticket event created
+
+All these database changes should happen safely.
+Prefer one backend transaction for the state change and audit event.
+
+============================================================
+12. PUBLIC TRACKING
+============================================================
+
+URL:
+ /track/[ticket]
+
+Require ticket number + PIN.
+
+Display only:
+- Ticket number
+- Status
+- Category
+- Department
+- Ward/landmark if safe
+- Submitted time
+- SLA deadline/status
+- Timeline
+- Before photo
+- After photo after resolution
+- Official closing remarks
+
+Do NOT display:
+- officer email
+- internal notes
+- auth IDs
+- private administrative information
+
+Timeline:
+SUBMITTED
+ASSIGNED
+IN_PROGRESS
+RESOLVED
+
+============================================================
+13. PUBLIC MAP — OPTIONAL
+============================================================
+
+Only build this if the core system is already stable.
+
+Map:
+- Leaflet
+- OpenStreetMap
+
+Show approximate public ticket locations.
+Never expose exact sensitive information unnecessarily.
+
+Colors:
+- open = red
+- in progress = yellow
+- resolved = green
+
+Do not spend excessive time on maps.
+
+============================================================
+14. PDF / QR — OPTIONAL BUT HIGH-VALUE
+============================================================
+
+Citizen receipt:
+- ticket number
+- date
+- department
+- SLA deadline
+- tracking URL
+- QR code
+- PIN warning
+
+Field work order:
+- ticket number
+- category
+- priority
+- location
+- description
+- before photo
+- SLA deadline
+- QR/navigation link
+
+If PDF generation creates deployment problems:
+- keep a print-friendly HTML page
+- use browser Print / Save as PDF
+- do not block the main application on server-side PDF tooling
+
+============================================================
+15. UI / DESIGN
+============================================================
+
+Style:
+- professional civic-tech dashboard
+- clean white/light interface
+- strong typography
+- simple cards
+- responsive
+- mobile-first citizen reporting
+- desktop dashboard for officers
+
+Citizen UI should feel:
+- trustworthy
+- fast
+- simple
+- non-technical
+
+Officer UI should feel:
+- operational
+- information-dense
+- easy to scan
+
+Avoid:
+- excessive animations
+- unnecessary gradients
+- huge component libraries
+- overdesigned landing page
+- complex navigation
+
+============================================================
+16. PROJECT STRUCTURE
+============================================================
+
+Prefer one repository:
+
+civicpulse/
+  app/
+    page.tsx
+    report/
+    track/
+    admin/
+  components/
+  lib/
+    supabase/
+    auth/
+    triage/
+    tickets/
+    sla/
+    duplicate/
+  public/
+  supabase/
+    migrations/
+    seed.sql
+  tests/
+  .env.example
+  README.md
+  package.json
+
+If the repository already has a structure:
+- inspect it first
+- preserve useful existing code
+- do not rewrite blindly
+
+============================================================
+17. ENVIRONMENT VARIABLES
+============================================================
+
+Create .env.example.
+
+Typical variables:
+
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+GROQ_API_KEY=
+NEXT_PUBLIC_APP_URL=
+
+Only use service-role key server-side.
+
+If Railway backend exists, use its corresponding environment variable names
+instead of creating duplicate names unnecessarily.
+
+============================================================
+18. API / SERVER OPERATIONS
+============================================================
+
+Minimum server operations:
+
+POST /api/tickets
+    Create anonymous ticket
+
+POST /api/tickets/triage
+    Optional separate triage endpoint
+
+POST /api/tickets/track
+    Verify ticket + PIN and return safe public data
+
+POST /api/tickets/:id/assign
+    Official assignment
+
+POST /api/tickets/:id/status
+    Status change
+
+POST /api/tickets/:id/resolve
+    Close ticket with proof
+
+GET /api/dashboard/stats
+    Officer metrics
+
+GET /api/tickets
+    Authenticated ticket listing
+
+If Next.js server routes are used, use equivalent Next.js route handlers.
+Do not create an unnecessary separate FastAPI service.
+
+============================================================
+19. SEED / DEMO DATA
+============================================================
+
+Create realistic demo data.
+
+At minimum:
+- 5 wards
+- 5 departments
+- 3 officials
+- 10-20 tickets
+- tickets across multiple statuses
+- some resolved
+- some breached
+- some high priority
+- some duplicate-linked
+
+Demo users:
+- Field Officer
+- Supervisor
+- Commissioner
+
+Use obvious demo credentials documented in README only for local/demo use.
+Never commit real production credentials.
+
+============================================================
+20. TESTING PLAN
+============================================================
+
+MANDATORY END-TO-END TEST:
+
+TEST 1 — Citizen report
+1. Open home
+2. Click report
+3. Enter pothole complaint
+4. Upload photo
+5. Add location
+6. Submit
+7. Confirm ticket created
+
+TEST 2 — AI/fallback triage
+1. Confirm department
+2. Confirm priority
+3. Confirm summary
+4. Confirm ticket creation even if Groq unavailable
+
+TEST 3 — Database
+1. Confirm ticket exists
+2. Confirm event exists
+3. Confirm SLA deadline
+4. Confirm photo URL
+
+TEST 4 — Official login
+1. Login as field officer
+2. See ticket
+3. Open detail
+
+TEST 5 — Status
+1. Assign
+2. Mark IN_PROGRESS
+3. Confirm timeline event
+
+TEST 6 — Resolution
+1. Attempt resolution without photo -> must fail
+2. Attempt with <20-char note -> must fail
+3. Add valid note + photo
+4. Resolve
+5. Confirm RESOLVED
+
+TEST 7 — Public tracking
+1. Open tracking URL
+2. Enter ticket + PIN
+3. Confirm status
+4. Confirm before/after photos
+5. Confirm no internal information leaks
+
+TEST 8 — Duplicate
+1. Create second complaint nearby
+2. Confirm duplicate warning/link
+3. Confirm impact count
+
+TEST 9 — SLA
+1. Create/seed a breached ticket
+2. Confirm red/overdue state
+3. Confirm breach recorded
+
+TEST 10 — Security
+1. Try accessing admin without login -> reject
+2. Try accessing another officer's restricted data -> reject
+3. Try reading all tickets anonymously -> reject
+4. Confirm secrets are not exposed in client bundle
+
+TEST 11 — Mobile
+1. Test report flow on mobile width
+2. Upload photo
+3. Location permission
+4. Submit
+
+TEST 12 — Deployment
+1. Production build succeeds
+2. Environment variables configured
+3. Supabase connected
+4. Auth works
+5. Storage works
+6. API works
+7. No console-breaking errors
+
+============================================================
+21. OPENCode WORKING METHOD
+============================================================
+
+IMPORTANT: OpenCode should work incrementally.
+
+PHASE 0 — INSPECT
+-----------------
+Before changing anything:
+- inspect repository
+- identify current stack
+- inspect package.json
+- inspect environment variables
+- inspect Supabase configuration
+- inspect existing routes/components
+- inspect Railway configuration if present
+- inspect Git configuration
+- identify broken deployment issues
+
+Do NOT immediately rewrite the project.
+
+PHASE 1 — FOUNDATION
+--------------------
+- clean project structure
+- environment setup
+- Supabase client
+- database migration
+- seed data
+- basic UI
+
+Definition of done:
+- app starts
+- Supabase connection works
+- database tables exist
+
+PHASE 2 — CITIZEN FLOW
+----------------------
+- home
+- report form
+- image upload
+- ticket generation
+- PIN
+- tracking page
+
+Definition of done:
+A real anonymous user can submit and retrieve a ticket.
+
+PHASE 3 — TRIAGE
+----------------
+- Groq integration
+- strict JSON validation
+- fallback classifier
+- SLA assignment
+- department assignment
+
+Definition of done:
+A submitted complaint is automatically categorized.
+
+PHASE 4 — OFFICIAL PORTAL
+-------------------------
+- Supabase Auth
+- roles
+- dashboard
+- ticket detail
+- assignment
+- status updates
+- resolution
+
+Definition of done:
+Officer can take a citizen ticket from submitted to resolved.
+
+PHASE 5 — DUPLICATE + SLA
+-------------------------
+- duplicate detection
+- impact count
+- countdown
+- breach state
+- event timeline
+
+Definition of done:
+Core business logic works.
+
+PHASE 6 — POLISH
+----------------
+- responsive UI
+- loading states
+- error handling
+- empty states
+- toast messages
+- print receipt
+- QR
+- optional map
+
+Definition of done:
+Product looks demo-ready.
+
+PHASE 7 — FULL TEST + DEPLOY
+----------------------------
+Run the complete end-to-end checklist.
+Fix issues in one pass where possible.
+Build production bundle.
+Verify deployment.
+Verify database.
+Verify authentication.
+Verify storage.
+Verify AI.
+Verify public tracking.
+Verify official dashboard.
+
+============================================================
+22. WHAT NOT TO BUILD
+============================================================
+
+Do NOT build these unless everything else is already working:
+
+- complex microservices
+- Kubernetes
+- Redis
+- Kafka
+- event bus
+- advanced PostGIS architecture
+- complicated WebSocket infrastructure
+- native mobile app
+- SMS/WhatsApp integration
+- payment system
+- government API integration
+- real municipal employee onboarding
+- advanced computer vision
+- AI image verification
+- elaborate contractor scoring
+- multi-city tenancy
+- complicated notification infrastructure
+- production-grade legal compliance system
+- unnecessary ML model training
+
+This is an MVP/demo project, not a government production deployment.
+
+============================================================
+23. FAILURE-SAFE PRINCIPLES
+============================================================
+
+Rule 1:
+If AI fails, ticket submission still works.
+
+Rule 2:
+If map fails, manual coordinates still work.
+
+Rule 3:
+If PDF fails, print-friendly HTML still works.
+
+Rule 4:
+If real-time connection fails, dashboard refresh still works.
+
+Rule 5:
+If image upload fails, show a clear error and do not silently create a
+broken ticket.
+
+Rule 6:
+Never expose secret environment variables.
+
+Rule 7:
+Never silently discard a citizen submission.
+
+============================================================
+24. FINAL DEFINITION OF DONE
+============================================================
+
+The project is DONE only when this exact demo works:
+
+CITIZEN PHONE
+    |
+    | anonymous complaint + photo + location
+    v
+CIVICPULSE
+    |
+    | AI/fallback triage
+    | duplicate check
+    | SLA assignment
+    v
+SUPABASE DATABASE + STORAGE
+    |
+    v
+OFFICER DASHBOARD
+    |
+    | assign
+    | in progress
+    | upload after photo
+    | closing note
+    v
+RESOLVED
+    |
+    v
+PUBLIC TRACKING PAGE
+    |
+    | before photo
+    | after photo
+    | timeline
+    | SLA result
+    v
+CITIZEN SEES COMPLETION
+
+If this flow works reliably, the project is successful.
+
+============================================================
+25. OPENCODE EXECUTION RULES
+============================================================
+
+When executing this plan:
+
+1. Inspect before editing.
+2. Work in small phases.
+3. After each phase, run the relevant tests.
+4. Fix errors immediately.
+5. Do not create duplicate files or duplicate architecture.
+6. Reuse existing code whenever safe.
+7. Keep dependencies minimal.
+8. Prefer boring, reliable code over clever code.
+9. Keep secrets server-side.
+10. Never mark a feature complete without testing it.
+11. If a feature is optional and is blocking the core flow, skip it.
+12. Keep a RUNBOOK.md or DEVELOPMENT_STATUS.md showing:
+    - completed
+    - failed
+    - blocked
+    - next step
+13. Before final response, run:
+    - lint
+    - typecheck
+    - tests
+    - production build
+14. Report exact remaining issues rather than hiding them.
+
+FINAL OPENCODE INSTRUCTION
+--------------------------
+"Build CivicPulse from this plan. First inspect the existing repository and
+environment. Do not blindly rewrite anything. Implement the smallest reliable
+end-to-end MVP first: anonymous citizen report -> Supabase -> triage ->
+duplicate check -> SLA -> official dashboard -> resolution proof -> public
+tracking. Use fallback logic whenever an external service is unavailable.
+After the core flow works, add polish and optional features. Test every phase
+before moving forward. Finish by running a complete end-to-end test and
+production build, then document any remaining issues."
